@@ -35,6 +35,9 @@ async function exercise(
   ];
   if (scenario === "fallback") responses[1] = "This is not a wrapped summary.";
   if (scenario === "wrong-fact") responses[2] = "The grace period is 99 years.";
+  if (scenario === "summary-omission")
+    responses[1] = "<compaction-summary>Project Lantern. Preserve the event log. The design review is ready; implementation remains unfinished.</compaction-summary>";
+  const continuationTruncated = () => scenario === "truncated-continuation" && requests.length === 3;
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -81,7 +84,7 @@ async function exercise(
       });
       event("content_block_stop", { index: 0 });
       event("message_delta", {
-        delta: { stop_reason: "end_turn", stop_sequence: null },
+        delta: { stop_reason: continuationTruncated() ? "max_tokens" : "end_turn", stop_sequence: null },
         usage: { output_tokens: 30 },
       });
       event("message_stop", {});
@@ -107,7 +110,7 @@ async function exercise(
       object: "chat.completion.chunk",
       created: 1,
       model: "fictional-model",
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      choices: [{ index: 0, delta: {}, finish_reason: continuationTruncated() ? "length" : "stop" }],
       usage: {
         prompt_tokens: inputTokens,
         completion_tokens: 30,
@@ -282,6 +285,7 @@ async function exercise(
       },
     ],
   };
+  if (scenario === "no-discarded-facts") fixture.facts[0].sourceMessage = messages.length - 1;
   if (fixtureId) {
     fixture = await (
       await import("../scripts/cache-reuse/fixtures.ts")
@@ -503,21 +507,48 @@ test("public live CLI runs the committed fixture and prints only its fixed outco
   assert.equal(run.requests.length, 3);
 });
 
-test("cache hits do not hide a failed continuation fact check", async (t) => {
-  const run = await exercise(
-    t,
-    8000,
-    "openai-completions",
-    false,
-    {},
-    "wrong-fact",
-  );
-  assert.equal(run.result.outcome, "failed");
-  const report = JSON.parse(
-    await readFile(join(run.result.directory, "result.json"), "utf8"),
-  );
-  assert.equal(report.checks.continuation, false);
-});
+for (const api of ["openai-completions", "anthropic-messages"]) {
+  for (const scenario of ["wrong-fact", "summary-omission"]) {
+    test(`${api}: ${scenario} is informational when flow and cache reuse pass`, async (t) => {
+      const run = await exercise(t, 8000, api, false, {}, scenario);
+      const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
+      assert.equal(run.result.outcome, "passed", JSON.stringify(report));
+      assert.equal(run.requests.length, 3);
+      assert.equal(report.checks.continuationCompleted, true);
+      assert.deepEqual(report.observations, {
+        discardedFactCount: 1,
+        summaryTermsPresent: scenario !== "summary-omission",
+        continuationTermsPresent: scenario !== "wrong-fact",
+      });
+    });
+  }
+
+  test(`${api}: no facts in A leaves term observations unknown without failing flow`, async (t) => {
+    const run = await exercise(t, 8000, api, false, {}, "no-discarded-facts");
+    const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
+    assert.equal(run.result.outcome, "passed", JSON.stringify(report));
+    assert.equal(report.checks.continuationCompleted, true);
+    assert.deepEqual(report.observations, {
+      discardedFactCount: 0,
+      summaryTermsPresent: null,
+      continuationTermsPresent: null,
+    });
+  });
+
+  test(`${api}: missing fixture terms do not excuse missing cache reuse`, async (t) => {
+    const run = await exercise(t, 0, api, false, {}, "wrong-fact");
+    const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
+    assert.equal(run.result.outcome, "failed");
+    assert.equal(report.reason, "insufficient-history-reuse");
+  });
+
+  test(`${api}: a truncated continuation still fails despite cache reuse`, async (t) => {
+    const run = await exercise(t, 8000, api, false, {}, "truncated-continuation");
+    const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
+    assert.equal(run.result.outcome, "failed");
+    assert.equal(report.reason, "continuation-failed");
+  });
+}
 
 test("a summary that omits the end of discarded history cannot pass", async (t) => {
   const run = await exercise(

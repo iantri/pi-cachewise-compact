@@ -13,6 +13,7 @@ Pending changes may be grouped by date under `Unreleased`.
 #### Changed
 
 - Raised the minimum supported Pi version to 1.1.0.
+- Live cache-reuse checks now report fixture-term matches as informational observations, without failing otherwise successful flow and cache-reuse checks.
 
 #### Added
 

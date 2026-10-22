@@ -83,6 +83,7 @@ export async function runCheck(
   let expectedRetained: unknown[] = [];
   let expectedDiscarded: unknown[] = [];
   const checks: Record<string, boolean> = {};
+  const observations: Record<string, boolean | number | null> = {};
   const report: Record<string, unknown> = {
     date: new Date().toISOString(),
     node: process.version,
@@ -112,10 +113,11 @@ export async function runCheck(
         join(repo, "extensions/cachewise-compact/index.ts"),
     },
     checks,
+    observations,
     requests: measurements,
     limitations: [
       "Reference token counts are estimates for other tokenizers.",
-      "Continuity checks cover listed facts, not general summary quality.",
+      "Fixture term matches are informational only; they do not establish accuracy or summary quality.",
       "A pass applies only to this configuration and candidate.",
     ],
   };
@@ -588,15 +590,19 @@ export async function runCheck(
         .slice(0, beforeBoundary)
         .some((e) => e.id === ids[f.sourceMessage]),
     );
-    requireCheck(facts.length > 0, "no-discarded-facts");
-    checks.summaryContinuity = facts.every((f) =>
-      f.mustInclude.every((term) =>
-        compact.summary.toLowerCase().includes(term.toLowerCase()),
-      ),
-    );
+    observations.discardedFactCount = facts.length;
+    observations.summaryTermsPresent = facts.length === 0
+      ? null
+      : facts.every((f) =>
+          f.mustInclude.every((term) =>
+            compact.summary.toLowerCase().includes(term.toLowerCase()),
+          ),
+        );
     step = "continuation";
     await session.prompt(
-      `Answer these project questions from context, without tools:\n${facts.map((f) => f.question).join("\n")}`,
+      facts.length > 0
+        ? `Answer these project questions from context, without tools:\n${facts.map((f) => f.question).join("\n")}`
+        : "Briefly acknowledge the project context, without tools.",
       { expandPromptTemplates: false },
     );
     await session.waitForIdle();
@@ -605,16 +611,15 @@ export async function runCheck(
       answers[2]?.stopReason === "stop" && !tools && !errors,
       "continuation-failed",
     );
-    checks.continuation = facts.every((f) =>
-      f.mustInclude.every((term) =>
-        textOf(answers[2]).toLowerCase().includes(term.toLowerCase()),
-      ),
-    );
+    checks.continuationCompleted = true;
+    observations.continuationTermsPresent = facts.length === 0
+      ? null
+      : facts.every((f) =>
+          f.mustInclude.every((term) =>
+            textOf(answers[2]).toLowerCase().includes(term.toLowerCase()),
+          ),
+        );
     const summary = measurements[1];
-    requireCheck(
-      checks.summaryContinuity && checks.continuation,
-      "continuity-failed",
-    );
     checks.observedTransport =
       measurements.length === 3 && measurements.every((m) => m.sent);
     if (!checks.observedTransport) {
