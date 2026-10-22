@@ -17,7 +17,7 @@ import { test, type TestContext } from "node:test";
 
 async function exercise(
   t: TestContext,
-  cacheRead: number | null = 8000,
+  cacheRead: number | null = 10000,
   api = "openai-completions",
   diagnostics = false,
   cacheOverrides: Record<string, unknown> = {},
@@ -27,6 +27,9 @@ async function exercise(
   const root = await mkdtemp(join(tmpdir(), "cache-check-session-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const requests: any[] = [];
+  const sentinel = join(root, "tool-sentinel.txt");
+  await writeFile(sentinel, "unchanged");
+  const toolArguments = { path: sentinel, content: "unexpected write" };
   let inputTokens = 12000;
   const responses = [
     "Recorded.",
@@ -47,6 +50,7 @@ async function exercise(
       return;
     }
     res.writeHead(200, { "content-type": "text/event-stream" });
+    const toolCall = requests.length === ["foreground-tool-call", "summary-tool-call", "continuation-tool-call"].indexOf(scenario) + 1;
     if (api === "anthropic-messages") {
       const event = (type: string, data: unknown) =>
         res.write(
@@ -68,7 +72,7 @@ async function exercise(
               ? {}
               : {
                   cache_read_input_tokens:
-                    requests.length === 2 ? cacheRead : 8000,
+                    requests.length === 2 ? cacheRead : 10000,
                   cache_creation_input_tokens: 0,
                 }),
           },
@@ -76,15 +80,19 @@ async function exercise(
       });
       event("content_block_start", {
         index: 0,
-        content_block: { type: "text", text: "" },
+        content_block: toolCall
+          ? { type: "tool_use", id: "unexpected-write", name: "write", input: {} }
+          : { type: "text", text: "" },
       });
       event("content_block_delta", {
         index: 0,
-        delta: { type: "text_delta", text: responses[requests.length - 1] },
+        delta: toolCall
+          ? { type: "input_json_delta", partial_json: JSON.stringify(toolArguments) }
+          : { type: "text_delta", text: responses[requests.length - 1] },
       });
       event("content_block_stop", { index: 0 });
       event("message_delta", {
-        delta: { stop_reason: continuationTruncated() ? "max_tokens" : "end_turn", stop_sequence: null },
+        delta: { stop_reason: toolCall ? "tool_use" : continuationTruncated() ? "max_tokens" : "end_turn", stop_sequence: null },
         usage: { output_tokens: 30 },
       });
       event("message_stop", {});
@@ -100,7 +108,9 @@ async function exercise(
       choices: [
         {
           index: 0,
-          delta: { role: "assistant", content: responses[requests.length - 1] },
+          delta: toolCall
+            ? { role: "assistant", tool_calls: [{ index: 0, id: "unexpected-write", type: "function", function: { name: "write", arguments: JSON.stringify(toolArguments) } }] }
+            : { role: "assistant", content: responses[requests.length - 1] },
           finish_reason: null,
         },
       ],
@@ -110,7 +120,7 @@ async function exercise(
       object: "chat.completion.chunk",
       created: 1,
       model: "fictional-model",
-      choices: [{ index: 0, delta: {}, finish_reason: continuationTruncated() ? "length" : "stop" }],
+      choices: [{ index: 0, delta: {}, finish_reason: toolCall ? "tool_calls" : continuationTruncated() ? "length" : "stop" }],
       usage: {
         prompt_tokens: inputTokens,
         completion_tokens: 30,
@@ -163,7 +173,7 @@ async function exercise(
   const extension = join(root, "noisy-extension.mjs");
   await writeFile(
     extension,
-    `export default function(pi){console.log(${JSON.stringify("PRIVATE_EXTENSION_CANARY " + credential + (scenario === "query-secret" ? " URL_SECRET_CANARY" : ""))});}`,
+    `export default function(pi){console.log(${JSON.stringify("PRIVATE_EXTENSION_CANARY " + credential + (scenario === "query-secret" ? " URL_SECRET_CANARY" : ""))});${scenario === "missing-tools" ? 'pi.on("before_provider_request", event => { delete event.payload.tools; });' : ""}}`,
   );
   let extensionPath: string | undefined;
   if (["shortened-history", "shortened-wire-history"].includes(scenario)) {
@@ -316,7 +326,7 @@ async function exercise(
     timeoutSeconds: 30,
     cache: {
       minimumPrefixTokens: 100,
-      sharedPrefixUpperBoundTokens: 6000,
+      sharedPrefixUpperBoundTokens: 8192,
       minimumHistoryCacheTokens: 1000,
       retentionSeconds: 300,
       ...cacheOverrides,
@@ -356,7 +366,42 @@ async function exercise(
       result = { outcome: report.outcome, directory };
     }
   }
-  return { root, requests, result, output, workspace };
+  return { root, requests, result, output, workspace, sentinel };
+}
+
+for (const api of ["openai-completions", "anthropic-messages"]) {
+  test(`${api}: normal coding tools stay in the foreground and summary prefix`, async (t) => {
+    const run = await exercise(t, 10000, api);
+    assert.equal(run.result.outcome, "passed", await readFile(join(run.result.directory, "result.json"), "utf8"));
+    assert.equal(run.requests.length, 3);
+    const definitions = run.requests[0].tools;
+    assert.deepEqual(definitions.map((tool: any) => tool.function?.name ?? tool.name), ["read", "bash", "edit", "write"]);
+    for (const tool of definitions) {
+      const schema = tool.function?.parameters ?? tool.input_schema;
+      assert.equal(schema.type, "object");
+      assert.ok(Object.keys(schema.properties).length > 0);
+    }
+    assert.deepEqual(run.requests[1].tools, definitions);
+    assert.deepEqual(run.requests[2].tools, definitions);
+    const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
+    assert.equal(report.checks.prefixFidelity, true);
+    assert.equal(report.checks.retainedHistory, true);
+  });
+
+  for (const [index, step] of ["foreground", "summary", "continuation"].entries()) {
+    test(`${api}: an unexpected ${step} tool call fails without execution or another request`, async (t) => {
+      const run = await exercise(t, 10000, api, false, {}, `${step}-tool-call`);
+      assert.equal(run.result.outcome, "failed");
+      assert.equal(run.requests.length, index + 1);
+      assert.equal(await readFile(run.sentinel, "utf8"), "unchanged");
+    });
+  }
+
+  test(`${api}: stripped coding tools cannot pass the live gate`, async (t) => {
+    const run = await exercise(t, 10000, api, false, {}, "missing-tools");
+    assert.equal(run.result.outcome, "unverified");
+    assert.equal(run.requests.length, 0);
+  });
 }
 
 test("live checker attributes meaningful cache reuse to optimized compaction through real Pi", async (t) => {
@@ -380,7 +425,7 @@ test("live checker attributes meaningful cache reuse to optimized compaction thr
     await readFile(join(run.result.directory, "result.json"), "utf8"),
   );
   assert.equal(report.requests[1].step, "summary");
-  assert.equal(report.requests[1].cacheRead, 8000);
+  assert.equal(report.requests[1].cacheRead, 10000);
   assert.equal(report.checks.retainedHistory, true);
   assert.deepEqual(await readdir(run.result.directory), ["result.json"]);
   assert.equal((await stat(run.result.directory)).mode & 0o777, 0o700);
@@ -410,17 +455,17 @@ for (const [count, outcome] of [
   });
 }
 test("Anthropic reports uncached input separately from cache reads", async (t) => {
-  const run = await exercise(t, 8000, "anthropic-messages");
+  const run = await exercise(t, 10000, "anthropic-messages");
   const report = JSON.parse(
     await readFile(join(run.result.directory, "result.json"), "utf8"),
   );
   assert.equal(run.result.outcome, "passed", JSON.stringify(report));
-  assert.equal(report.requests[1].input, 12000);
-  assert.equal(report.requests[1].cacheRead, 8000);
+  assert.equal(report.requests[1].input, 14000);
+  assert.equal(report.requests[1].cacheRead, 10000);
 });
 
 test("diagnostics keep fictional response content private and omit credentials even from extension logs", async (t) => {
-  const run = await exercise(t, 8000, "openai-completions", true);
+  const run = await exercise(t, 10000, "openai-completions", true);
   assert.equal(run.result.outcome, "passed");
   const diagnostics = await readFile(
     join(run.result.directory, "diagnostics.json"),
@@ -436,7 +481,7 @@ test("diagnostics keep fictional response content private and omit credentials e
 });
 
 test("a shared-prefix bound too small for the actual request blocks dispatch", async (t) => {
-  const run = await exercise(t, 8000, "openai-completions", false, {
+  const run = await exercise(t, 10000, "openai-completions", false, {
     sharedPrefixUpperBoundTokens: 1,
   });
   assert.equal(run.result.outcome, "unverified");
@@ -446,7 +491,7 @@ test("a shared-prefix bound too small for the actual request blocks dispatch", a
 test("native fallback is blocked and cannot count as optimized success", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},
@@ -459,7 +504,7 @@ test("native fallback is blocked and cannot count as optimized success", async (
 test("cancellation cleans the temporary session and cannot pass", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},
@@ -510,7 +555,7 @@ test("public live CLI runs the committed fixture and prints only its fixed outco
 for (const api of ["openai-completions", "anthropic-messages"]) {
   for (const scenario of ["wrong-fact", "summary-omission"]) {
     test(`${api}: ${scenario} is informational when flow and cache reuse pass`, async (t) => {
-      const run = await exercise(t, 8000, api, false, {}, scenario);
+      const run = await exercise(t, 10000, api, false, {}, scenario);
       const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
       assert.equal(run.result.outcome, "passed", JSON.stringify(report));
       assert.equal(run.requests.length, 3);
@@ -524,7 +569,7 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
   }
 
   test(`${api}: no facts in A leaves term observations unknown without failing flow`, async (t) => {
-    const run = await exercise(t, 8000, api, false, {}, "no-discarded-facts");
+    const run = await exercise(t, 10000, api, false, {}, "no-discarded-facts");
     const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
     assert.equal(run.result.outcome, "passed", JSON.stringify(report));
     assert.equal(report.checks.continuationCompleted, true);
@@ -543,7 +588,7 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
   });
 
   test(`${api}: a truncated continuation still fails despite cache reuse`, async (t) => {
-    const run = await exercise(t, 8000, api, false, {}, "truncated-continuation");
+    const run = await exercise(t, 10000, api, false, {}, "truncated-continuation");
     const report = JSON.parse(await readFile(join(run.result.directory, "result.json"), "utf8"));
     assert.equal(run.result.outcome, "failed");
     assert.equal(report.reason, "continuation-failed");
@@ -553,7 +598,7 @@ for (const api of ["openai-completions", "anthropic-messages"]) {
 test("a summary that omits the end of discarded history cannot pass", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},
@@ -569,7 +614,7 @@ test("a summary that omits the end of discarded history cannot pass", async (t) 
 test("discarded history verification includes Pi's split-turn prefix", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},
@@ -586,7 +631,7 @@ test("discarded history verification includes Pi's split-turn prefix", async (t)
 test("a payload hook cannot shorten serialized discarded history", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},
@@ -600,14 +645,14 @@ test("a payload hook cannot shorten serialized discarded history", async (t) => 
 });
 
 test("the checker accepts the Chat Completions cache-counter locations recognized by Pi", async (t) => {
-  const run = await exercise(t, 8000, "openai-completions", false, {}, "alias");
+  const run = await exercise(t, 10000, "openai-completions", false, {}, "alias");
   assert.equal(run.result.outcome, "passed");
 });
 
 test("credential redaction preserves valid JSON even when a credential contains JSON punctuation", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     true,
     {},
@@ -624,7 +669,7 @@ test("credential redaction preserves valid JSON even when a credential contains 
 test("URL credentials are omitted from private diagnostics", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     true,
     {},
@@ -665,7 +710,7 @@ test("the complete 250k conversation replays through Anthropic Messages", async 
 test("unobserved provider transport cannot produce a verified pass", async (t) => {
   const run = await exercise(
     t,
-    8000,
+    10000,
     "openai-completions",
     false,
     {},

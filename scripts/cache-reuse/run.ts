@@ -4,6 +4,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
+import { findPackageJSON } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import type * as Pi from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -159,11 +160,10 @@ export async function runCheck(
     globalThis.fetch = async () => {
       throw new CheckError("unexpected-network-request");
     };
-    const sdk: typeof Pi = await import(
-      config.sdkDir
-        ? pathToFileURL(join(config.sdkDir, "dist/index.js")).href
-        : "@earendil-works/pi-coding-agent"
-    );
+    const sdkEntry = config.sdkDir
+      ? pathToFileURL(join(config.sdkDir, "dist/index.js")).href
+      : import.meta.resolve("@earendil-works/pi-coding-agent");
+    const sdk: typeof Pi = await import(sdkEntry);
     const sdkPackage = config.sdkDir
       ? join(config.sdkDir, "package.json")
       : fileURLToPath(
@@ -220,6 +220,24 @@ export async function runCheck(
           {
             name: "cache-check-observer",
             factory(pi) {
+              pi.registerCommand("cache-check-seed", {
+                description: "Seed the isolated verification prompt and tool loadout.",
+                async handler(_args, ctx) {
+                  const { buildSystemPromptState } = await import(promptModule.href);
+                  const aiPackage = findPackageJSON("@earendil-works/pi-ai", sdkEntry);
+                  requireCheck(aiPackage !== undefined, "missing-prerequisite");
+                  const aiManifest = JSON.parse(await readFile(aiPackage, "utf8"));
+                  const { toToolDeclaration } = await import(
+                    new URL(aiManifest.exports["."].import, pathToFileURL(aiPackage)).href
+                  );
+                  manager.appendMessage({
+                    role: "system",
+                    ...buildSystemPromptState(ctx.getSystemPromptOptions()),
+                    toolsAdded: session!.agent.state.tools.map(toToolDeclaration),
+                    timestamp: 0,
+                  });
+                },
+              });
               pi.on("tool_call", () => {
                 tools++;
                 return { block: true, reason: "No tools during verification." };
@@ -343,6 +361,10 @@ export async function runCheck(
             "insufficient-headroom",
           );
           if (step === "foreground") {
+            requireCheck(
+              Array.isArray(wire.tools) && wire.tools.length > 0,
+              "coding-tools-missing",
+            );
             const shared = JSON.stringify({
               system: wire.system,
               tools: wire.tools,
@@ -463,12 +485,13 @@ export async function runCheck(
       modelRuntime: runtime,
       model,
       thinkingLevel: config.thinking,
-      tools: [],
+      tools: ["read", "bash", "edit", "write"],
       resourceLoader: services.resourceLoader,
       settingsManager: settings,
       sessionManager: manager,
     });
     session = created.session;
+    report.activeTools = session.getActiveToolNames();
     requireCheck(
       !created.modelFallbackMessage &&
         session.thinkingLevel === config.thinking,
@@ -486,23 +509,13 @@ export async function runCheck(
           diagnosticsErrors.push({ event: error.event, message: error.error });
       },
     });
-    // Seed the public prompt state before A, using the selected SDK's own builder.
+    // Seed the host's prompt and full tool declarations before A. A later loadout
+    // patch would change the discarded boundary and the foreground prefix.
     const promptModule = new URL(
       "./core/system-prompt.js",
-      config.sdkDir
-        ? pathToFileURL(join(config.sdkDir, "dist/index.js")).href
-        : import.meta.resolve("@earendil-works/pi-coding-agent"),
+      sdkEntry,
     );
-    const { buildSystemPromptState } = await import(promptModule.href);
-    manager.appendMessage({
-      role: "system",
-      ...buildSystemPromptState({
-        customPrompt: SYSTEM,
-        cwd,
-        selectedTools: [],
-      }),
-      timestamp: 0,
-    });
+    await session.prompt("/cache-check-seed");
     const ids: string[] = [];
     fixture.messages.forEach((message, index) => {
       const m: Record<string, unknown> = {
