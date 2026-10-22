@@ -4,11 +4,11 @@ pi-cachewise-compact aims to reduce disruptive compaction pauses for local-infer
 
 It uses your existing provider and model and preserves Pi's normal compaction structure: **a summary of the discarded older history, followed by the retained recent history unchanged**. In other words, behaviour is as close as possible to stock Pi compaction, except that instead of a separate summarization request, the summarization prompt is appended to the tail of the conversation prefix up to the point of compaction.
 
+The goal is **less waiting without materially worse task continuity, lost work, or extra work managing the agent**.
+
 When both completed turns and the beginning of a split turn are discarded, native Pi summarizes them in separate requests, each receiving its own source material. An appended request sees all discarded history together. Reproducing the native division would rely on the model to enforce two source scopes within that shared input and keep the resulting summaries consistent. We instead ask for one coherent checkpoint of the state at the end of the discarded history, followed by concise continuation context that keeps the interrupted request and unfinished work visible. The aim is useful context for continuation without asking the model to reproduce a separation that native Pi establishes through separate inputs.
 
 This changes only the mixed split-turn prompt. The history selection, summary objectives, combined summary budget, and preserved request prefix stay the same; recent history remains unchanged. Ordinary and split-only compaction keep their existing behavior.
-
-The goal is **less waiting without materially worse task continuity, lost work, or extra work managing the agent**.
 
 ![Standard Pi compaction builds a separate summarization request with older history serialized as text. pi-cachewise-compact preserves the system, tools, and older message prefix, then appends summary instructions so cached computation can be reused. Both continue with a summary and unchanged recent history; cache reuse is not guaranteed.](docs/images/compaction-comparison-v5.png)
 
