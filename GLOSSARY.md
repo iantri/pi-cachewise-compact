@@ -45,6 +45,9 @@ _Avoid_: Prefix fidelity
 **Split turn**:
 A conversational turn whose earlier messages belong to A and whose later messages belong to B.
 
+**Split-turn prefix**:
+The earlier portion of a split turn that belongs to A, before its continuation in B.
+
 **Turn context**:
 A checkpoint of the original request and progress in a split turn's discarded prefix, placed before its retained continuation.
 
