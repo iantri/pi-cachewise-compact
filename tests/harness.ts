@@ -9,12 +9,14 @@ import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   createAgentSession,
+  AgentSessionRuntime,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type ExtensionAPI,
   type ExtensionFactory,
+  type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 
 export interface WireRequest {
@@ -33,6 +35,28 @@ export interface Reply {
   stop?: "stop" | "length" | "incomplete" | "pause_turn";
   thinking?: string;
   beforeReply?: () => void | Promise<void>;
+  onCancelled?: () => void;
+  onCompleted?: () => void;
+  usage?: { input: number; output: number };
+}
+
+/** Hold a fake provider response until the test releases it, observing the real transport. */
+export function holdReply(content: Omit<Reply, "beforeReply" | "onCancelled" | "onCompleted">) {
+  const barrier = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+  const started = barrier();
+  const released = barrier();
+  const cancelled = barrier();
+  const completed = barrier();
+  return {
+    reply: { ...content, beforeReply: async () => { started.resolve(); await released.promise; },
+      onCancelled: cancelled.resolve, onCompleted: completed.resolve } satisfies Reply,
+    started: started.promise, cancelled: cancelled.promise, completed: completed.promise,
+    release: () => released.resolve(),
+  };
 }
 
 export interface HarnessOptions {
@@ -70,7 +94,10 @@ export async function createHarness(t: TestContext, options: HarnessOptions = {}
     const planned = replies[requests.length - 1];
     assert.notEqual(planned, undefined, "Unexpected extra inference request");
     const reply: Reply = typeof planned === "string" ? { text: planned } : planned;
+    res.on("close", () => { if (!res.writableFinished) reply.onCancelled?.(); });
+    res.on("finish", () => reply.onCompleted?.());
     await reply.beforeReply?.();
+    if (res.destroyed) return;
     res.writeHead(200, { "content-type": "text/event-stream" });
     if (api === "anthropic-messages") {
       const event = (type: string, data: Record<string, unknown>) =>
@@ -78,7 +105,7 @@ export async function createHarness(t: TestContext, options: HarnessOptions = {}
       event("message_start", { message: {
         id: `reply-${requests.length}`, type: "message", role: "assistant", model: "fixture-model",
         content: [], stop_reason: null, stop_sequence: null,
-        usage: { input_tokens: 2000, output_tokens: 0 },
+        usage: { input_tokens: reply.usage?.input ?? 2000, output_tokens: 0 },
       } });
       let index = 0;
       if (reply.thinking !== undefined) {
@@ -100,7 +127,7 @@ export async function createHarness(t: TestContext, options: HarnessOptions = {}
       }
       event("message_delta", {
         delta: { stop_reason: reply.tool ? "tool_use" : reply.stop === "length" ? "max_tokens" : reply.stop === "incomplete" ? null : reply.stop === "pause_turn" ? "pause_turn" : "end_turn", stop_sequence: null },
-        usage: { output_tokens: 20 },
+        usage: { output_tokens: reply.usage?.output ?? 20 },
       });
       event("message_stop", {});
       res.end();
@@ -117,7 +144,8 @@ export async function createHarness(t: TestContext, options: HarnessOptions = {}
       choices: [{ index: 0, delta, finish_reason: null }] });
     frame({ id: `reply-${requests.length}`, object: "chat.completion.chunk", created: 1, model: "fixture-model",
       choices: [{ index: 0, delta: {}, finish_reason: reply.tool ? "tool_calls" : reply.stop === "incomplete" ? null : reply.stop ?? "stop" }],
-      usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } });
+      usage: { prompt_tokens: reply.usage?.input ?? 2000, completion_tokens: reply.usage?.output ?? 20,
+        total_tokens: (reply.usage?.input ?? 2000) + (reply.usage?.output ?? 20) } });
     res.end("data: [DONE]\n\n");
   });
   server.listen(0, "127.0.0.1");
@@ -170,20 +198,40 @@ export async function createHarness(t: TestContext, options: HarnessOptions = {}
     cwd, agentDir, modelRuntime, model, thinkingLevel: "off", tools: ["read", "write", "bash"],
     resourceLoader: loader, settingsManager, sessionManager,
   });
-  t.after(() => session.dispose());
-  await session.bindExtensions({
+  const bind = async (current: AgentSession) => current.bindExtensions({
     mode: "rpc",
     uiContext: {
-      ...session.extensionRunner.getUIContext(),
+      ...current.extensionRunner.getUIContext(),
       notify: (message, type = "info") => notifications.push({ message, type }),
     },
     onError: (error) => extensionErrors.push(error),
   });
+  const runtime = new AgentSessionRuntime(session,
+    { cwd, agentDir, modelRuntime, settingsManager, resourceLoader: loader, diagnostics: [] },
+    async ({ cwd: nextCwd, sessionManager: nextManager, sessionStartEvent }) => {
+      const nextLoader = new DefaultResourceLoader({
+        cwd: nextCwd, agentDir, settingsManager,
+        additionalExtensionPaths: [fileURLToPath(new URL("../", import.meta.url))],
+        extensionFactories: options.extensionFactories,
+        noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+        systemPrompt: "You are a coding assistant. Preserve the user's constraints.",
+      });
+      await nextLoader.reload();
+      assert.deepEqual(nextLoader.getExtensions().errors, []);
+      const result = await createAgentSession({ cwd: nextCwd, agentDir, modelRuntime,
+        tools: ["read", "write", "bash"], resourceLoader: nextLoader, settingsManager,
+        sessionManager: nextManager, sessionStartEvent });
+      return { ...result, services: { cwd: nextCwd, agentDir, modelRuntime, settingsManager,
+        resourceLoader: nextLoader, diagnostics: [] }, diagnostics: [] };
+    });
+  runtime.setRebindSession(bind);
+  t.after(() => runtime.dispose());
+  await bind(session);
   if (options.configure !== false) {
     await session.prompt("/cachewise-compact provider add");
     await session.prompt("/cachewise-compact on");
   }
-  return { session, sessionManager, settingsManager, modelRuntime, model, requests, replies, extensionErrors, notifications, cwd, agentDir };
+  return { session, runtime, sessionManager, settingsManager, modelRuntime, model, requests, replies, extensionErrors, notifications, cwd, agentDir };
 }
 
 export const summary = "## Goal\nKeep the parser streaming.\n## Next Steps\nFinish src/parser.ts.";
