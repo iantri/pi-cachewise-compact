@@ -223,7 +223,7 @@ test("configuration checking enforces the Pi minimum without importing the SDK",
   );
   const path = join(root, "config.json");
   await writeFile(path, JSON.stringify({ ...configuration(root), sdkDir }));
-  for (const version of ["1.0.1", "1.0.2", "1.1.0", "2.0.0"]) {
+  for (const version of ["1.0.2", "1.0.99", "1.1.0", "1.1.1", "1.2.0", "2.0.0"]) {
     await writeFile(
       join(sdkDir, "package.json"),
       JSON.stringify({ type: "module", version }),
@@ -233,7 +233,7 @@ test("configuration checking enforces the Pi minimum without importing the SDK",
       [cli, "--check", "--config", path],
       { encoding: "utf8" },
     );
-    const supported = version !== "1.0.1";
+    const supported = !version.startsWith("1.0.");
     assert.equal(result.status, supported ? 0 : 2, version);
     assert.equal(
       result.stdout,

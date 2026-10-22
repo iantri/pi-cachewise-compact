@@ -1,4 +1,4 @@
-export const MINIMUM_PI_VERSION = "1.0.2";
+export const MINIMUM_PI_VERSION = "1.1.0";
 
 /** Admit stable releases at or above the documented minimum; Pi owns its peers. */
 export function piVersionDiagnostic(version: unknown): string | undefined {
@@ -8,8 +8,8 @@ export function piVersionDiagnostic(version: unknown): string | undefined {
       version,
     );
   if (match) {
-    const [major, minor, patch] = match.slice(1, 4).map(Number);
-    if (major > 1 || (major === 1 && (minor > 0 || patch >= 2)))
+    const [major, minor] = match.slice(1, 4).map(Number);
+    if (major > 1 || (major === 1 && minor >= 1))
       return undefined;
   }
   return `unsupported-pi-version-requires-at-least-${MINIMUM_PI_VERSION}`;

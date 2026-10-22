@@ -10,6 +10,10 @@ Pending changes may be grouped by date under `Unreleased`.
 
 ### 2026-10-22
 
+#### Changed
+
+- Raised the minimum supported Pi version to 1.1.0.
+
 #### Added
 
 - Lifecycle regression tests for queued input, stale summaries, cancellation, session transitions, and automatic compaction.

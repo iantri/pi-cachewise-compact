@@ -6,7 +6,7 @@ This procedure covers the reusable checker, configuration example, and two autho
 
 ## Running the checker
 
-Use a source checkout with `npm ci` installed, Node >=22.19.0, and Pi >=1.0.2. The checker uses the pinned development SDK by default. It is a maintainer tool, excluded from the npm extension archive.
+Use a source checkout with `npm ci` installed, Node >=22.19.0, and Pi >=1.1.0. The checker uses the pinned development SDK by default. It is a maintainer tool, excluded from the npm extension archive.
 
 1. Copy [cache-reuse.example.json](cache-reuse.example.json) to a location outside this checkout. Replace its placeholders and cache-policy assumptions. Create the external results directory first. Use owner-only permissions for the configuration and results directory.
 2. Choose a model with room for the selected fixture, system/tools, thinking, and output. Select `100k` or `250k` explicitly; the checker never changes the selection to make a run fit.

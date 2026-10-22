@@ -506,7 +506,7 @@ test("Anthropic summary preserves Pi's configured thinking budget", async (t) =>
 });
 
 
-for (const contextWindow of [8550, 32768]) {
+for (const contextWindow of [8566, 32768]) {
   test(`Anthropic preserves the native answer allowance with thinking (${contextWindow} context tokens)`, async (t) => {
     const h = await createHarness(t, {
       api: "anthropic-messages", reasoning: true, reserveTokens: 2048, contextWindow,

@@ -65,7 +65,7 @@ Preserve native continuation, recovery, persistence, and user interaction. Provi
 
 The PRD v1.2 Phase 1 behavior is the product baseline, with two approved amendments: both Chat Completions and Anthropic Messages require implementation and automated coverage; built-in competing manual compaction may retain Pi's native cancellation behavior. Anthropic live verification is deferred to #1 and is not an initial release gate. The PRD's Section 5 Phase 2 requirements remain retained requirements for a separate phase; only Appendix B's proposed defaults and rules are unapproved. Neither belongs in this implementation.
 
-Pi 1.0.2 is the initial exact compatibility target, based on released source inspection, not completed runtime testing. Establish that target through the integration suite before claiming support. Widen the version range only with evidence. No patched host or private API dependency is permitted. The source review identifies implementation risks; it does not constitute completed acceptance testing.
+Support Pi 1.1.0 and newer, with development dependencies pinned to 1.1.0. Verify compatibility through the real-session integration suite; the version range alone is not evidence of compatibility. No patched host or private API dependency is permitted. The source review identifies implementation risks; it does not constitute completed acceptance testing.
 
 Document the supported version range and required capabilities. Keep non-UI behavior portable across the operating systems supported by that range. Installation must not require the author's provider, model, endpoint, engine version, or private setup. Distribute no personal settings, selected provider IDs, request captures, or credentials. The named smoke configuration is a test target, not a product dependency.
 
@@ -131,7 +131,7 @@ Do not change persistent settings. Do not try optimization after an explicitly n
 
 ### Persistence and accounting
 
-Approved Pi 1.0.2 diagnostics exception: do not subscribe to `session_compact_failed`. Its awaited dispatch exposes a host controller-cleanup race when built-in manual compactions overlap. Preserve successful-operation metadata and explicit `/compact-native` callback outcomes. Some failed or cancelled built-in operations may have no durable outcome record; status must disclose this and defer to Pi's operation error, not claim completion. No host patch, retry, or extra inference is required to restore those diagnostics.
+Approved diagnostics exception (originally identified on Pi 1.0.2): do not subscribe to `session_compact_failed`. Its awaited dispatch exposes a host controller-cleanup race when built-in manual compactions overlap. Preserve successful-operation metadata and explicit `/compact-native` callback outcomes. Some failed or cancelled built-in operations may have no durable outcome record; status must disclose this and defer to Pi's operation error, not claim completion. No host patch, retry, or extra inference is required to restore those diagnostics.
 
 Let Pi save the summary, exact retained identity, context information, successful summary usage, and reconstruction metadata. Preserve raw substantive history and session navigation. Carry cumulative file-operation metadata across optimized, native, and reopened sessions without importing B's operations. Pi's handling of extension-originated compactions makes this a specific integration acceptance case, not a claim that returning familiar metadata keys is sufficient.
 
@@ -200,9 +200,9 @@ Approved departures from the PRD are limited to protocol scope/live-test schedul
 
 Follow-up: #1, live Anthropic Messages verification.
 
-Primary source references for the initial compatibility target:
+Current supported baseline and original implementation source references:
 
-- [Pi 1.0.2 release](https://github.com/earendil-works/pi/releases/tag/v1.0.2)
+- [Pi 1.1.0 release](https://github.com/earendil-works/pi/releases/tag/v1.1.0)
 - [Released extension contracts](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/extensions.md)
 - [Native compaction behavior](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/compaction.md)
 - [Session lifecycle and commit](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/agent-session.ts)

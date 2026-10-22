@@ -8,11 +8,11 @@ The goal is **less waiting without materially worse task continuity, lost work, 
 
 ![Standard Pi compaction builds a separate summarization request with older history serialized as text. pi-cachewise-compact preserves the system, tools, and older message prefix, then appends summary instructions so cached computation can be reused. Both continue with a summary and unchanged recent history; cache reuse is not guaranteed.](docs/images/compaction-comparison-v5.png)
 
-Supports Pi 1.0.2 and newer.
+Supports Pi 1.1.0 and newer.
 
 ## Setup
 
-Requires Pi 1.0.2 or newer and Node.js 22.19.0 or newer. We match Pi's minimum supported Node.js version. Install from GitHub using Pi's package manager:
+Requires Pi 1.1.0 or newer and Node.js 22.19.0 or newer. We match Pi's minimum supported Node.js version. Install from GitHub using Pi's package manager:
 
 ```sh
 pi install git:github.com/iantri/pi-cachewise-compact
