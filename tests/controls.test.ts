@@ -117,16 +117,15 @@ test("native bypass forwards focus exactly, preserves Pi's request, and affects 
   });
 });
 
-test("Codex conversion warns in status but does not block native bypass", async (t) => {
+test("native bypass reports when another extension supplies the summary", async (t) => {
   const h = await createHarness(t, { replies: ["Recorded.", "Recorded.", "Recent."] });
   await h.session.prompt(olderConstraint);
   await h.session.prompt(olderTask);
   await h.session.prompt(recent);
   const extensions = join(h.agentDir, "extensions");
   await mkdir(extensions, { recursive: true });
-  // A real loaded extension supplies a summary, avoiding any Responses HTTP call.
-  await writeFile(join(extensions, "pi-codex-conversion.ts"), `export default function (pi) {
-    pi.registerCommand("fixture-conversion", { handler: async () => {} });
+  // A real loaded extension supplies the summary without making an inference request.
+  await writeFile(join(extensions, "other-compaction.ts"), `export default function (pi) {
     pi.on("session_before_compact", (event) => ({ compaction: {
       summary: ${JSON.stringify(summary)},
       firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -134,22 +133,17 @@ test("Codex conversion warns in status but does not block native bypass", async 
     } }));
   }`);
   await h.session.reload();
-  h.modelRuntime.registerProvider("user-chosen-provider", {
-    api: "openai-responses", baseUrl: h.model.baseUrl, apiKey: "dummy-local-test-key",
-    models: [{ ...h.model, id: "responses-fixture", api: "openai-responses" }],
-  });
-  await h.session.setModel(h.modelRuntime.getModel("user-chosen-provider", "responses-fixture")!);
   await h.session.prompt("/cachewise-compact status");
-  assert.match(h.notifications.at(-1)!.message, /Codex conversion may own compaction/);
+  assert.match(h.notifications.at(-1)!.message, /Availability: eligible when request compatibility is established/);
   h.notifications.length = 0;
   const settings = await readFile(join(h.agentDir, "cachewise-compact.json"), "utf8");
   await h.session.prompt("/compact-native");
   const entry = h.sessionManager.getBranch().findLast((entry) => entry.type === "compaction");
-  assert.ok(entry, "Compaction proceeds despite the status warning");
+  assert.ok(entry, "The other extension can supply the committed summary");
   assert.equal(entry.summary, summary);
   assert.equal(entry.fromHook, true);
   assert.ok(h.notifications.some(({ message }) => /Another extension supplied this summary/.test(message)));
-  assert.ok(h.notifications.every(({ message, type }) => type !== "error" && !/Codex conversion/.test(message)));
+  assert.ok(h.notifications.every(({ type }) => type !== "error"));
   assert.equal(await readFile(join(h.agentDir, "cachewise-compact.json"), "utf8"), settings);
   assert.equal(h.requests.length, 3, "Native bypass makes no optimized inference attempt");
   assert.deepEqual(h.extensionErrors, []);

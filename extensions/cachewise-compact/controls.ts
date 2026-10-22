@@ -82,8 +82,6 @@ async function updateSettings(agentDir: string, change: (settings: Settings) => 
 }
 
 export interface ControlOptions {
-  /** Return a reason when another extension may own summary generation or retention. */
-  nativeConflict: (ctx: ExtensionContext) => string | undefined;
   estimateContext: (ctx: ExtensionContext) => number;
 }
 
@@ -198,7 +196,7 @@ export function registerControls(pi: ExtensionAPI, options: ControlOptions) {
       if (command === "status") {
         const availability = !settings.enabled ? "off" : !settings.providers.length ? "inactive: no providers selected"
           : !ctx.model || !settings.providers.includes(ctx.model.provider) ? "inactive: current provider not selected"
-          : options.nativeConflict(ctx) ?? "eligible when request compatibility is established";
+          : "eligible when request compatibility is established";
         ctx.ui.notify(`Cache compaction: ${settings.enabled ? "on" : "off"}\nSelected: ${selected()}\nCurrent: ${ctx.model?.provider ?? "none"}\nAvailability: ${availability}\n${lastStatus(ctx)}\nPi 1.0.2: built-in failure/cancellation outcomes may be unavailable; see Pi’s operation error.`, "info");
       } else if (command === "providers") {
         const available = new Set(ctx.modelRegistry.getAll().map((model) => model.provider));

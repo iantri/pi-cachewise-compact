@@ -50,7 +50,7 @@ This extension preserves the request prefix; it cannot guarantee cache retention
 
 Request-transforming extensions require care. A nested model call does not replay Pi's entire agent hook pipeline. Arbitrary context rewrites, payload replacements, header changes, and custom routing are not verified compatible.
 
-Other extensions that affect or take over compaction are likely incompatible; for example [pi-codex-conversion](https://github.com/IgorWarzocha/howaboua-pi-stuff/tree/main/packages/pi-codex-conversion). This extension does a limited check for whether a registered command's source path contains `pi-codex-conversion` and the current model uses a Responses API. When both conditions match, it warns in status. `/compact-native` does not perform this check. Other cases aren't automatically detected.
+Other extensions that modify or take over compaction may be incompatible. Use pi-cachewise-compact only with extension combinations you have verified work together.
 
 ## Development
 

@@ -127,7 +127,7 @@ Implement `/compact-native [optional focus instructions]` using the documented c
 
 For that invocation, make no optimized inference attempt, supply no custom summary, and do not modify Pi's native summarization request. Native summary generation must use the user's ordinary Pi settings.
 
-Do not change persistent settings. Do not try optimization after an explicitly native failure. Native means Pi's built-in summarizer, but other extensions can override it. The limited known-conflict check is advisory in status only; `/compact-native` must not run that check or reject the command on that basis. Do not disable other extensions. Report when another extension supplied the committed summary. Passive observers and demonstrated compatible request transformers may coexist.
+Do not change persistent settings. Do not try optimization after an explicitly native failure. Native means Pi's built-in summarizer, but other extensions can override it. Do not detect competing extensions by name or source path. Compatibility depends on observed request and operation integrity, not an extension-name check. Do not disable other extensions. Report when another extension supplied the committed summary. Passive observers and demonstrated compatible request transformers may coexist.
 
 ### Persistence and accounting
 

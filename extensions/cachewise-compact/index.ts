@@ -208,14 +208,6 @@ export default function cachewiseCompact(pi: ExtensionAPI) {
   const controls = registerControls(pi, {
     estimateContext: (ctx) => ctx.sessionManager.buildSessionProjection().messages
       .reduce((tokens, message) => tokens + estimateTokens(message), 0),
-    nativeConflict: (ctx) => {
-      const codexCommands = pi.getCommands().some((command) =>
-        /pi-codex-conversion/.test(command.sourceInfo.path));
-      if (codexCommands && ctx.model?.api.includes("responses")) {
-        return "Codex conversion may own compaction on this route; built-in native compaction cannot be guaranteed.";
-      }
-      return undefined;
-    },
   });
 
   pi.on("session_before_compact", async (event, ctx) => {

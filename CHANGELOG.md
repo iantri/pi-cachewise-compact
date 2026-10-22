@@ -8,6 +8,12 @@ Pending changes may be grouped by date under `Unreleased`.
 
 ## [Unreleased]
 
+### 2026-10-22
+
+#### Removed
+
+- Removed author-specific extension compatibility check
+
 ### 2026-10-21
 
 #### Added
