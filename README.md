@@ -2,7 +2,9 @@
 
 pi-cachewise-compact aims to reduce disruptive compaction pauses for local-inference Pi users by generating the compaction summary based on continuation of the existing conversation prefix, allowing the inference engine to reuse work it has already performed.
 
-It uses your existing provider and model and preserves Pi's normal compaction structure: **a summary of the discarded older history, followed by the retained recent history unchanged**. In other words, behaviour is materially the same as stock Pi compaction, except that instead of a separate summarization request, the summarization prompt is appended to the tail of the conversation prefix up to the point of compaction.
+It uses your existing provider and model and preserves Pi's normal compaction structure: **a summary of the discarded older history, followed by the retained recent history unchanged**. In other words, behaviour is as close as possible to stock Pi compaction, except that instead of a separate summarization request, the summarization prompt is appended to the tail of the conversation prefix up to the point of compaction.
+
+When both completed turns and the beginning of a split turn are discarded, native Pi summarizes them in separate requests. This extension asks for one checkpoint of all discarded history, followed by concise continuation context for the split turn. That context can draw on earlier decisions without repeating the checkpoint. The history selection, summary objectives, combined summary budget, and preserved request prefix stay the same; recent history remains unchanged. Ordinary and split-only compaction keep their existing behavior.
 
 The goal is **less waiting without materially worse task continuity, lost work, or extra work managing the agent**.
 

@@ -371,17 +371,12 @@ export default function cachewiseCompact(pi: ExtensionAPI) {
       }
       summaryPrompt = `${splitBoundary}
 
-Return exactly two top-level sections in this order, using the headings below.
-
-# History Summary
-Apply the following instructions only to earlier completed turns before the split-turn boundary, including any previous summary. Here, "messages above" and "new messages" mean only that earlier history. Do not include the split turn in this section.
+Create one coherent checkpoint of all conversation messages above, including the split-turn prefix and any previous summary.
 
 ${summaryPrompt}
 
-# Turn Context
-Apply the following instructions only to the split-turn prefix from the split-turn boundary through the conversation messages before these instructions. Here, "messages above" means only that split-turn prefix, not earlier history or the previous summary.
-
-${turnPrefixInstruction}`;
+## Continuation Context
+Identify the user's request at the split-turn boundary, progress as of the end of the messages above, and unresolved details needed to understand the retained continuation. Include earlier dependencies when needed. Avoid repeating information already covered in the checkpoint. Do not infer or reconstruct later messages stored separately.`;
     }
     const responseFormat = `\n\nWrap the entire generated summary in exactly one ${summaryOpen} block, closed by ${summaryClose}.
 Place all sections inside that single block. Output only that block, without preamble or trailing text. Do not nest or repeat these delimiters inside the summary.`;

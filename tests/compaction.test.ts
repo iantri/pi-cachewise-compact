@@ -290,10 +290,13 @@ test("split-only compaction preserves the previous summary verbatim without budg
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
 for (const withPreviousSummary of [false, true]) {
-test(`${api}: mixed split-turn compaction separates history${withPreviousSummary ? " updates" : ""} from the prepared turn prefix`, async (t) => {
+for (const unheaded of [false, true]) {
+test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary ? " with a previous summary" : ""}${unheaded ? " with unheaded output" : ""}`, async (t) => {
   const splitRequest = "MIXED_SPLIT_REQUEST: preserve exact parser behavior.";
   const turnSummary = "## Original Request\nPreserve parser behavior.\n\n## Progress So Far\n- Read parser.ts.\n\n## Context Needed to Continue\n- Keep the parser streaming.";
-  const mixedSummary = `# History Summary\n${summary}\n\n# Turn Context\n${turnSummary}`;
+  const mixedSummary = unheaded
+    ? "Preserve earlier EOF requirements and continue the streaming parser."
+    : `${summary}\n\n## Continuation Context\n${turnSummary}`;
   const h = await createHarness(t, { api, replies: [
     { tool: { name: "read", arguments: { path: "earlier.ts" } } }, "Earlier task recorded.",
     { tool: { name: "read", arguments: { path: "parser.ts" } } },
@@ -324,28 +327,29 @@ test(`${api}: mixed split-turn compaction separates history${withPreviousSummary
   assert.ok(!JSON.stringify(maintenance).includes("B_MIXED_SUFFIX"));
   const content = maintenance.messages.at(-1)!.content;
   const instruction = typeof content === "string" ? content : (content as Array<{ text: string }>).map((block) => block.text).join("\n");
-  assert.match(instruction, /# History Summary/);
-  assert.match(instruction, /# Turn Context/);
+  assert.match(instruction, /checkpoint of all conversation messages above, including the split-turn prefix and any previous summary/);
+  assert.match(instruction, /## Continuation Context/);
   // Count the converted custom message and Anthropic's user-role tool results, not just raw user entries.
   const ordinal = (api === "anthropic-messages" ? 4 : 3) + (withPreviousSummary ? 1 : 0);
   assert.ok(instruction.includes(`user-role message ${ordinal}, content block 1`));
   assert.ok(instruction.includes(JSON.stringify(splitRequest)));
   assert.match(instruction, /Count all user-role messages.*including summaries, extension context, and tool results/);
-  const historyInstructions = instruction.slice(instruction.indexOf("# History Summary"), instruction.indexOf("# Turn Context"));
-  assert.match(historyInstructions, /only.*before the split-turn boundary/);
+  const historyInstructions = instruction.slice(0, instruction.indexOf("## Continuation Context"));
   assert.match(historyInstructions, /## Goal/);
   if (withPreviousSummary) {
     assert.match(historyInstructions, /PRESERVE all existing information from the previous summary/);
     assert.match(historyInstructions, /remove if resolved/);
     assert.ok(JSON.stringify(maintenance).includes("PRIOR_SUMMARY"));
   }
-  const turnInstructions = instruction.slice(instruction.indexOf("# Turn Context"));
-  assert.match(turnInstructions, /only.*from the split-turn boundary.*before these instructions/);
-  assert.match(turnInstructions, /## Original Request/);
-  assert.match(turnInstructions, /## Progress So Far/);
-  assert.match(turnInstructions, /## Context Needed to Continue/);
-  assert.match(turnInstructions, /Only summarize information explicitly present above\. Do not infer or recreate later messages\./);
-  assert.ok(!turnInstructions.includes("## Goal"));
+  const turnInstructions = instruction.slice(instruction.indexOf("## Continuation Context"));
+  assert.match(turnInstructions, /user's request at the split-turn boundary/);
+  assert.match(turnInstructions, /progress as of the end of the messages above/);
+  assert.match(turnInstructions, /unresolved details needed to understand the retained continuation/);
+  assert.match(turnInstructions, /Include earlier dependencies when needed/);
+  assert.match(turnInstructions, /Avoid repeating information already covered in the checkpoint/);
+  assert.match(turnInstructions, /Do not infer or reconstruct later messages stored separately/);
+  assert.ok(!instruction.includes("# History Summary"));
+  assert.ok(!instruction.includes("# Turn Context"));
   assert.match(instruction, /Keep the EOF test requirement\./);
   assert.match(instruction, /Place all sections inside that single block/);
   assert.equal(maintenance.max_tokens ?? maintenance.max_completion_tokens, 1363);
@@ -359,6 +363,7 @@ test(`${api}: mixed split-turn compaction separates history${withPreviousSummary
   assert.deepEqual(h.sessionManager.buildSessionContext().messages.at(-1), kept.type === "message" ? kept.message : undefined);
   assert.deepEqual(SessionManager.open(h.sessionManager.getSessionFile()!).buildSessionContext().messages, h.session.messages);
 });
+}
 }
 }
 
