@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "fixture": "100k",
+  "provider": "YOUR_PROVIDER_ID",
+  "model": "YOUR_MODEL_ID",
+  "outputDir": "/absolute/private/verification-results",
+  "authPath": "/absolute/private/pi-agent/auth.json",
+  "extensions": [],
+  "thinking": "off",
+  "cacheRetention": "short",
+  "diagnostics": false,
+  "contextTokens": 196608,
+  "reserveTokens": 8192,
+  "keepRecentTokens": 1024,
+  "maxOutputTokens": 2048,
+  "timeoutSeconds": 900,
+  "cache": {
+    "minimumPrefixTokens": 1024,
+    "sharedPrefixUpperBoundTokens": 16384,
+    "minimumHistoryCacheTokens": 8192,
+    "retentionSeconds": 300
+  }
+}

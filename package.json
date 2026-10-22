@@ -1,0 +1,53 @@
+{
+  "name": "pi-cachewise-compact",
+  "version": "0.1.0",
+  "description": "Cache-preserving compaction for Pi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iantri/pi-cachewise-compact.git"
+  },
+  "homepage": "https://github.com/iantri/pi-cachewise-compact#readme",
+  "bugs": {
+    "url": "https://github.com/iantri/pi-cachewise-compact/issues"
+  },
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "extensions/",
+    "docs/images/compaction-comparison-v5.png",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/cachewise-compact/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "proper-lockfile": "4.1.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.0.2",
+    "@earendil-works/pi-coding-agent": "1.0.2",
+    "@types/node": "24.6.0",
+    "js-tiktoken": "1.0.21",
+    "tsx": "4.20.5",
+    "typescript": "5.9.3"
+  }
+}

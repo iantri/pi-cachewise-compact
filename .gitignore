@@ -1,0 +1,9 @@
+.pi/taskmaster/
+.pi/subagents.json
+node_modules/
+prompt-bundle-*/
+/LOCAL_PI_REF.md
+.DS_Store
+/.agents/
+/.claude/
+/skills-lock.json
