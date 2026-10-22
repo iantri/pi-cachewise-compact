@@ -1,8 +1,8 @@
 # pi-cachewise-compact
 
-pi-cachewise-compact aims to reduce disruptive compaction pauses for local-inference Pi users by generating the compaction summary from the existing conversation prefix, allowing the inference engine to reuse work it has already performed.
+pi-cachewise-compact aims to reduce disruptive compaction pauses for local-inference Pi users by generating the compaction summary based on continuation of the existing conversation prefix, allowing the inference engine to reuse work it has already performed.
 
-It uses your existing provider and model and preserves Pi's normal compaction structure: **a summary of the discarded older history, followed by the retained recent history unchanged**.
+It uses your existing provider and model and preserves Pi's normal compaction structure: **a summary of the discarded older history, followed by the retained recent history unchanged**. In other words, behaviour is materially the same as stock Pi compaction, except that instead of a separate summarization request, the summarization prompt is appended to the tail of the conversation prefix up to the point of compaction.
 
 The goal is **less waiting without materially worse task continuity, lost work, or extra work managing the agent**.
 
@@ -12,22 +12,22 @@ Supports Pi 1.1.0 and newer.
 
 ## Setup
 
-Requires Pi 1.1.0 or newer and Node.js 22.19.0 or newer. We match Pi's minimum supported Node.js version. Install from GitHub using Pi's package manager:
+Requires Pi 1.1.0 or newer and Node.js 22.19.0 or newer. Install it from npm using Pi's package manager:
 
 ```sh
-pi install git:github.com/iantri/pi-cachewise-compact
+pi install npm:pi-cachewise-compact
 ```
 
-Reload Pi after installation. Pi clones the repository and installs its dependencies; you do not need a local checkout. Access to this repository is required; it is not currently a public npm release.
+Reload Pi after installation. 
 
-The extension starts off, with no providers selected. Configure it using your existing Pi provider ID:
+The extension is initially disabled, with no providers selected. Configure it using your existing Pi provider ID:
 
 ```text
 /cachewise-compact provider add
 /cachewise-compact on
 ```
 
-An omitted provider ID resolves to the current model's provider at command time. Selecting a provider covers its models collectively; it does not distinguish local from cloud traffic. No endpoint or credentials are configured here.
+An omitted provider ID resolves to the current model's provider at command time. Selecting a provider covers its models collectively.
 
 ## Commands
 
@@ -46,7 +46,7 @@ In RPC mode, submit extension commands through `prompt`. Pi's RPC `compact` oper
 
 Automated tests cover OpenAI-compatible Chat Completions and Anthropic Messages. Live testing has covered only Chat Completions, where it verified prefix preservation and provider-reported cache reuse. Anthropic Messages has not yet been verified against a live provider.
 
-This extension preserves the request prefix; it cannot guarantee cache retention, a cache hit, or faster execution on every attempt.
+This extension preserves the request prefix; it cannot guarantee cache retention, a cache hit, or faster execution on every attempt. For the intended benefit of achieving cache reuse, your inference engine must be able to prefill from an earlier prefix than the latest state of the conversation. This is true of oMLX at least as of 0.7.0, but may not be true of all inference engines.
 
 Request-transforming extensions require care. A nested model call does not replay Pi's entire agent hook pipeline. Arbitrary context rewrites, payload replacements, header changes, and custom routing are not verified compatible.
 
