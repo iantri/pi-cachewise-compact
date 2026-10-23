@@ -19,7 +19,7 @@ Supports Pi 1.1.0 and newer.
 Requires Pi 1.1.0 or newer and Node.js 22.19.0 or newer. Install it from npm using Pi's package manager:
 
 ```sh
-pi install npm:pi-cachewise-compact
+pi install npm:@iantri/pi-cachewise-compact
 ```
 
 Run `/reload` in Pi after installation, or restart Pi.
@@ -38,16 +38,27 @@ An omitted provider ID resolves to the current model's provider at command time.
 Update the installed package:
 
 ```sh
-pi update npm:pi-cachewise-compact
+pi update npm:@iantri/pi-cachewise-compact
 ```
 
 Remove it:
 
 ```sh
-pi remove npm:pi-cachewise-compact
+pi remove npm:@iantri/pi-cachewise-compact
 ```
 
 Run `/reload` or restart Pi after either change. Removing the package leaves its saved settings in place for a later reinstall. To disable it without removing it, use `/cachewise-compact off`.
+
+### Migrate from the unscoped npm package
+
+From version 0.2.0, the npm package name is `@iantri/pi-cachewise-compact`. Existing installations do not switch automatically. Remove the old package before installing the scoped one so Pi does not load both:
+
+```sh
+pi remove npm:pi-cachewise-compact
+pi install npm:@iantri/pi-cachewise-compact
+```
+
+If you installed the old package with `--local`, use `--local` for both commands. Run `/reload` or restart Pi after migration. Saved enablement and provider settings stay in place; commands and compaction behavior are unchanged.
 
 ## Commands
 

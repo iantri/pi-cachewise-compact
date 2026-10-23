@@ -7,6 +7,12 @@ Releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
+### Changed
+
+- Move the npm package to `@iantri/pi-cachewise-compact`. Existing users must remove `npm:pi-cachewise-compact` and install `npm:@iantri/pi-cachewise-compact`, then reload or restart Pi. Saved settings, commands, and compaction behavior are unchanged.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

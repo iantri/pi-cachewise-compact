@@ -1,6 +1,6 @@
 {
-  "name": "pi-cachewise-compact",
-  "version": "0.1.0",
+  "name": "@iantri/pi-cachewise-compact",
+  "version": "0.2.0",
   "description": "Cache-preserving compaction for Pi",
   "license": "MIT",
   "repository": {
@@ -12,6 +12,9 @@
     "url": "https://github.com/iantri/pi-cachewise-compact/issues"
   },
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "pi-package"
   ],

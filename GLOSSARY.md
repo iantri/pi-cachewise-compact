@@ -5,7 +5,7 @@ This context covers summarizing older conversation history while preserving rece
 ## Language
 
 **pi-cachewise-compact**:
-The Pi extension that summarizes older conversation history while preserving the existing request prefix for possible cache reuse. This is the extension's name in prose as well as its package name.
+The Pi extension that summarizes older conversation history while preserving the existing request prefix for possible cache reuse. This is the extension's name in prose. Its npm package name is `@iantri/pi-cachewise-compact`.
 _Avoid_: CacheWise
 
 **Compaction**:
