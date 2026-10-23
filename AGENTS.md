@@ -24,6 +24,7 @@ the fact rather than hedging around it, and cut ornament and filler.
   or editing substantive prose. Do not wait to be asked; the preference is standing.
 - This governs prose, not identifiers or established domain terms. `GLOSSARY.md` holds the
   project's vocabulary, and the right domain word beats a simpler wrong one.
+- Use the extension's full name, `pi-cachewise-compact`, in conversation and written material, as defined in `GLOSSARY.md`.
 
 ## Verification
 

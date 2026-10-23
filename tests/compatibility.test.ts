@@ -11,7 +11,7 @@ for (const changesInB of [false, true]) {
     const promptSurgery: ExtensionFactory = (pi) => {
       pi.on("before_agent_start", (event) => ({
         systemPrompt: event.systemPrompt.replace("You are a coding assistant.", "Use registered tools and loaded skills.") +
-          (changesInB && event.prompt.includes("B_ONLY_CANARY") ? "\nB_DERIVED_STATUS: the recent task is complete." : ""),
+          (changesInB && "prompt" in event && event.prompt.includes("B_ONLY_CANARY") ? "\nB_DERIVED_STATUS: the recent task is complete." : ""),
       }));
     };
     const h = await createHarness(t, { extensionFactories: [sandbox, promptSurgery],

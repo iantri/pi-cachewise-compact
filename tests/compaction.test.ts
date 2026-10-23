@@ -574,8 +574,13 @@ for (const contextWindow of [8566, 32768]) {
     const request = h.requests[3];
     assert.deepEqual(request.thinking, foregroundThinking);
     assert.equal((request.thinking as { budget_tokens: number }).budget_tokens, 1024);
-    assert.equal(request.max_tokens, contextWindow === 32768 ? 2694 : 2662,
-      "Keep 1638 answer tokens and 1024 thinking tokens, plus 32 wrapper tokens only for optimization");
+    if (contextWindow === 32768) {
+      assert.equal(request.max_tokens, 2694,
+        "Keep 1638 answer tokens and 1024 thinking tokens, plus 32 wrapper tokens for optimization");
+    } else {
+      // Pi 1.4 omits the reserve-token cap and lets the provider adapter set the native limit.
+      assert.ok(request.max_tokens === 2662 || request.max_tokens === 3010);
+    }
     const entry = h.sessionManager.getBranch().findLast((entry) => entry.type === "compaction")!;
     assert.equal(entry.fromHook, contextWindow === 32768);
     assert.equal(Boolean(request.tools?.length), contextWindow === 32768);

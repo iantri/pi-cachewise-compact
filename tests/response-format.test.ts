@@ -118,7 +118,13 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
       assert.equal((await h.session.compact()).summary, summary);
       assert.equal(h.requests.length, 4, "An insufficient model limit must not dispatch an optimized request");
       const request = h.requests[3];
-      assert.equal(request.max_tokens ?? request.max_completion_tokens, optimized ? 851 : 819);
+      const requestLimit = request.max_tokens ?? request.max_completion_tokens;
+      if (optimized || maxTokens === 819) {
+        assert.equal(requestLimit, maxTokens);
+      } else {
+        // Pi 1.4 omits the reserve-token cap and lets the provider adapter set the native limit.
+        assert.ok(requestLimit === 819 || requestLimit === 850);
+      }
       assert.equal(Boolean(request.tools?.length), optimized);
       assert.equal(h.sessionManager.getBranch().findLast((entry) => entry.type === "compaction")?.fromHook, optimized);
       assert.deepEqual(h.extensionErrors, []);
