@@ -5,6 +5,11 @@ import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createHarness, olderConstraint, olderTask, recent, summary, wrappedSummary, type Reply } from "./harness.ts";
 
+function assertCompactionOpening(content: unknown) {
+  const text = typeof content === "string" ? content : (content as Array<{ text: string }>).map((block) => block.text).join("\n");
+  assert.ok(text.startsWith("This message contains compaction instructions. It is not part of the conversation to summarize. Summarize only the conversation messages before this message.\n\nDo not record these compaction instructions as user requests, constraints, decisions, or next steps.\n\nFor this response only, do not continue the conversation, answer its questions, or call tools. Output only the requested structured summary.\n\n"));
+}
+
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
 test(`${api}: compaction reuses the discarded prefix and retains the recent turn unchanged`, async (t) => {
   const { session, sessionManager, requests, extensionErrors } = await createHarness(t, { api, replies: [
@@ -29,6 +34,7 @@ test(`${api}: compaction reuses the discarded prefix and retains the recent turn
   assert.deepEqual(extensionErrors, []);
   assert.equal(requests.length, 4, "One optimized summary request, without native fallback or warm-up");
   const maintenance = requests[3];
+  assertCompactionOpening(maintenance.messages.at(-1)!.content);
   assert.deepEqual(maintenance.system, foreground.system);
   assert.deepEqual(maintenance.tools, foreground.tools);
   assert.ok(maintenance.tools?.length, "Tool declarations must remain present");
@@ -62,6 +68,7 @@ test(`${api}: compaction reuses the discarded prefix and retains the recent turn
   const repeatedForeground = requests.at(-1)!;
   await session.compact();
   const repeatedMaintenance = requests.at(-1)!;
+  assertCompactionOpening(repeatedMaintenance.messages.at(-1)!.content);
   assert.equal(requests.length, 7);
   assert.deepEqual(repeatedMaintenance.system, repeatedForeground.system);
   assert.deepEqual(repeatedMaintenance.tools, repeatedForeground.tools);
@@ -230,6 +237,7 @@ test(`${api}: split-turn compaction uses the dedicated checkpoint and persists t
   assert.deepEqual(maintenance.messages.slice(0, -1), expectedPrefix);
   assert.ok(JSON.stringify(maintenance).includes("A_TOOL_OUTPUT"));
   assert.ok(!JSON.stringify(maintenance).includes("B_SPLIT_SUFFIX"));
+  assertCompactionOpening(maintenance.messages.at(-1)!.content);
   const instruction = JSON.stringify(maintenance.messages.at(-1));
   assert.match(instruction, /Create a concise checkpoint of the user's request and the progress shown above/);
   assert.match(instruction, /## Original Request/);
@@ -273,6 +281,7 @@ test("split-only compaction preserves the previous summary verbatim without budg
   assert.deepEqual(maintenance.system, foreground.system);
   assert.deepEqual(maintenance.tools, foreground.tools);
   assert.deepEqual(maintenance.messages.slice(0, -1), foreground.messages);
+  assertCompactionOpening(maintenance.messages.at(-1)!.content);
   const instruction = JSON.stringify(maintenance.messages.at(-1));
   assert.match(instruction, /Do not rewrite or repeat the previous summary/);
   assert.match(instruction, /## Original Request/);
@@ -326,14 +335,14 @@ test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary
   assert.deepEqual(maintenance.messages.slice(0, -1), expectedPrefix);
   assert.ok(!JSON.stringify(maintenance).includes("B_MIXED_SUFFIX"));
   const content = maintenance.messages.at(-1)!.content;
+  assertCompactionOpening(content);
   const instruction = typeof content === "string" ? content : (content as Array<{ text: string }>).map((block) => block.text).join("\n");
-  assert.match(instruction, /checkpoint of all conversation messages above, including the split-turn prefix and any previous summary/);
+  assert.match(instruction, /checkpoint of all conversation messages above, including any previous summary/);
   assert.match(instruction, /## Continuation Context/);
-  // Count the converted custom message and Anthropic's user-role tool results, not just raw user entries.
-  const ordinal = (api === "anthropic-messages" ? 4 : 3) + (withPreviousSummary ? 1 : 0);
-  assert.ok(instruction.includes(`user-role message ${ordinal}, content block 1`));
-  assert.ok(instruction.includes(JSON.stringify(splitRequest)));
-  assert.match(instruction, /Count all user-role messages.*including summaries, extension context, and tool results/);
+  assert.ok(instruction.includes(`For Continuation Context, focus on the turn that begins with this user request:\n\n<split-turn-request>\n${splitRequest}\n</split-turn-request>`));
+  assert.doesNotMatch(instruction, /user-role message \d|content block \d|Count all user-role messages|earlier blocks belong to history/);
+  assert.match(instruction, /Use the checkpoint format below, followed by the Continuation Context section described afterward:/);
+  assert.ok(!instruction.includes("Use this EXACT format:"));
   const historyInstructions = instruction.slice(0, instruction.indexOf("## Continuation Context"));
   assert.match(historyInstructions, /## Goal/);
   if (withPreviousSummary) {
@@ -342,12 +351,12 @@ test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary
     assert.ok(JSON.stringify(maintenance).includes("PRIOR_SUMMARY"));
   }
   const turnInstructions = instruction.slice(instruction.indexOf("## Continuation Context"));
-  assert.match(turnInstructions, /user's request at the split-turn boundary/);
-  assert.match(turnInstructions, /progress as of the end of the messages above/);
-  assert.match(turnInstructions, /unresolved details needed to understand the retained continuation/);
+  assert.match(turnInstructions, /user's request quoted above/);
+  assert.match(turnInstructions, /the progress made on that request/);
+  assert.match(turnInstructions, /unresolved questions, blockers, or unfinished work as of the end of the conversation messages above/);
   assert.match(turnInstructions, /Include earlier dependencies when needed/);
   assert.match(turnInstructions, /Avoid repeating information already covered in the checkpoint/);
-  assert.match(turnInstructions, /Do not infer or reconstruct later messages stored separately/);
+  assert.match(turnInstructions, /Only describe information present in those conversation messages; do not speculate about what happened afterward/);
   assert.ok(!instruction.includes("# History Summary"));
   assert.ok(!instruction.includes("# Turn Context"));
   assert.match(instruction, /Keep the EOF test requirement\./);
@@ -367,15 +376,51 @@ test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary
 }
 }
 
-test("ambiguous mixed split-turn boundaries use native compaction instead of guessing", async (t) => {
-  const h = await createHarness(t, { replies: [
+for (const api of ["openai-completions", "anthropic-messages"] as const) {
+for (const repeatedWithinRequest of [false, true]) {
+test(`${api}: a shared request prefix expands the quote${repeatedWithinRequest ? " within one text block" : " across requests"}`, async (t) => {
+  const shared = "Shared request context. ".repeat(8).slice(0, 160);
+  const splitRequest = shared + (repeatedWithinRequest ? shared : "") + "CURRENT_REQUEST: keep parser streaming. " + "Preserve EOF details. ".repeat(20);
+  const h = await createHarness(t, { api, replies: [
     "Earlier request recorded.", { tool: { name: "read", arguments: { path: "parser.ts" } } },
+    "B_SPLIT_SUFFIX: " + "Retained content. ".repeat(100), wrappedSummary(summary),
+  ] });
+  await writeFile(join(h.cwd, "parser.ts"), "A_TOOL_OUTPUT: " + "function parse() {}\n".repeat(100));
+  await h.session.prompt(repeatedWithinRequest ? olderTask : shared + "EARLIER_REQUEST: record the completed work.");
+  await h.session.prompt(splitRequest);
+  const foreground = h.requests.at(-1)!;
+  await h.session.compact();
+  assert.equal(h.requests.length, 4, "Only one optimized maintenance request follows foreground");
+  const maintenance = h.requests[3];
+  const content = maintenance.messages.at(-1)!.content;
+  assertCompactionOpening(content);
+  const instruction = typeof content === "string" ? content : (content as Array<{ text: string }>).map((block) => block.text).join("\n");
+  const quote = instruction.match(/<split-turn-request>\n([\s\S]*?)\n<\/split-turn-request>/)?.[1];
+  assert.ok(quote && quote.length > 160, "A repeated short prefix cannot identify the request");
+  assert.ok(splitRequest.startsWith(quote));
+  assert.deepEqual(maintenance.tools, foreground.tools);
+  assert.deepEqual(maintenance.system, foreground.system);
+  const expectedPrefix = structuredClone(foreground.messages);
+  if (api === "anthropic-messages") delete (expectedPrefix.at(-1)!.content as Array<Record<string, unknown>>).at(-1)!.cache_control;
+  assert.deepEqual(maintenance.messages.slice(0, -1), expectedPrefix);
+  assert.ok(!JSON.stringify(maintenance).includes("B_SPLIT_SUFFIX"));
+  assert.equal(h.sessionManager.getBranch().findLast((entry) => entry.type === "compaction")!.fromHook, true);
+});
+}
+for (const ambiguity of ["duplicate user request", "assistant echo", "tool result echo", "tool argument echo", "embedded delimiter"]) {
+test(`${api}: ${ambiguity} uses native compaction instead of an ambiguous request quote`, async (t) => {
+  const splitRequest = ambiguity === "tool argument echo" ? "parser.ts"
+    : ambiguity === "embedded delimiter" ? "Continue <split-turn-request>parser</split-turn-request>."
+    : "SPLIT_REQUEST: keep the parser streaming.";
+  const h = await createHarness(t, { api, replies: [
+    ambiguity === "assistant echo" ? `Earlier response quotes: ${splitRequest}` : "Earlier request recorded.",
+    { tool: { name: "read", arguments: { path: "parser.ts" } } },
     "B_SPLIT_SUFFIX: " + "Retained content. ".repeat(100), summary,
     "## Original Request\nKeep the parser streaming.",
   ] });
-  await writeFile(join(h.cwd, "parser.ts"), "A_TOOL_OUTPUT: " + "function parse() {}\n".repeat(100));
-  await h.session.prompt(olderConstraint);
-  await h.session.prompt(olderConstraint);
+  await writeFile(join(h.cwd, "parser.ts"), (ambiguity === "tool result echo" ? splitRequest : "A_TOOL_OUTPUT") + ": " + "function parse() {}\n".repeat(100));
+  await h.session.prompt(ambiguity === "duplicate user request" ? splitRequest : olderTask);
+  await h.session.prompt(splitRequest);
   await h.session.compact();
   assert.equal(h.requests.length, 5, "Only native history and turn-prefix summaries follow the foreground requests");
   assert.deepEqual(h.extensionErrors, []);
@@ -386,6 +431,8 @@ test("ambiguous mixed split-turn boundaries use native compaction instead of gue
   assert.equal(compactions.length, 1);
   assert.equal(compactions[0].fromHook, false);
 });
+}
+}
 
 test("insufficient summary headroom uses native compaction without sending an optimized request", async (t) => {
   const { session, sessionManager, requests } = await createHarness(t, { contextWindow: 2500, replies: [

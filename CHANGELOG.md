@@ -12,10 +12,15 @@ Pending changes may be grouped by date under `Unreleased`.
 
 #### Changed
 
-- Mixed split-turn compaction now requests one checkpoint of all discarded history followed by focused continuation context.
+- Documented live verification of Anthropic Messages alongside Chat Completions, with compatibility limited to tested configurations.
+- Mixed split-turn compaction now requests one checkpoint of all discarded history followed by continuation context anchored to a unique request quote and focused on progress, unresolved questions, blockers, and unfinished work.
 - Raised the minimum supported Pi version to 1.1.0.
 - Live cache-reuse checks now report fixture-term matches as informational observations, without failing otherwise successful flow and cache-reuse checks.
 - Live cache-reuse checks now preserve Pi's normal coding tool definitions across requests while blocking tool execution and failing unexpected tool calls.
+
+#### Fixed
+
+- Clarified that appended compaction instructions are not conversation facts or future tasks.
 
 #### Added
 

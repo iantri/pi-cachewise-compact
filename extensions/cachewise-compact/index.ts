@@ -70,7 +70,11 @@ function requestOptions(pi: ExtensionAPI): SimpleStreamOptions {
 
 // Pi 1.0.2 summary templates. Keep the conversation prefix intact and place the
 // summarizer role instruction here instead of replacing the system prompt.
-const summarizerInstruction = `Do NOT continue the conversation. Do NOT respond to any questions in the conversation or call tools. ONLY output the structured summary.
+const summarizerInstruction = `This message contains compaction instructions. It is not part of the conversation to summarize. Summarize only the conversation messages before this message.
+
+Do not record these compaction instructions as user requests, constraints, decisions, or next steps.
+
+For this response only, do not continue the conversation, answer its questions, or call tools. Output only the requested structured summary.
 
 `;
 const summaryInstruction = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
@@ -164,17 +168,53 @@ function describeSplitBoundary(start: Message | undefined, payload: PayloadSnaps
   if (start?.role !== "user") return undefined;
   const first = typeof start.content === "string" ? start.content :
     start.content[0]?.type === "text" ? start.content[0].text : undefined;
-  if (!first?.trim()) return undefined;
-  // Use the observed provider representation: custom messages become users, and
-  // Anthropic also sends tool results as users. Do not guess from raw user entries.
-  const matches = (payload?.messages ?? []).filter((message) => message.role === "user")
-    .flatMap((message, userIndex) => (Array.isArray(message.content) ? message.content : [])
-      .flatMap((block, blockIndex) => block && typeof block === "object" && !Array.isArray(block) &&
-        block.type === "text" && block.text === first ? [{ userIndex, blockIndex }] : []));
+  if (!first?.trim() || first.includes("<split-turn-request>") || first.includes("</split-turn-request>")) return undefined;
+  const messages = payload?.messages ?? [];
+  const matches = messages.filter((message) => message.role === "user")
+    .flatMap((message) => (Array.isArray(message.content) ? message.content : [])
+      .filter((block) => block && typeof block === "object" && !Array.isArray(block) &&
+        block.type === "text" && block.text === first));
   if (matches.length !== 1) return undefined;
-  const { userIndex, blockIndex } = matches[0];
-  return `The split-turn boundary is user-role message ${userIndex + 1}, content block ${blockIndex + 1}, whose text starts with ${JSON.stringify(first.slice(0, 160))}.
-Count all user-role messages above, including summaries, extension context, and tool results. Count messages and content blocks from 1. The boundary includes that block; earlier blocks belong to history.`;
+
+  const text: string[] = [];
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") text.push(value);
+    else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) {
+        collect(child);
+        // Chat Completions encodes tool arguments as JSON text.
+        if (key === "arguments" && typeof child === "string") {
+          try { collect(JSON.parse(child)); } catch { /* Keep the original text. */ }
+        }
+      }
+    }
+  };
+  for (const message of messages) {
+    collect(message.content);
+    collect(message.tool_calls);
+    collect(message.function_call);
+  }
+  // Foreground evidence may include retained content. An echo there can cause
+  // conservative fallback, but the quote always comes from the split request.
+  const characters = Array.from(first);
+  for (let length = Math.min(160, characters.length);;) {
+    const excerpt = characters.slice(0, length).join("");
+    let occurrences = 0;
+    for (const value of text) {
+      for (let index = value.indexOf(excerpt); index >= 0; index = value.indexOf(excerpt, index + 1)) {
+        if (++occurrences > 1) break;
+      }
+      if (occurrences > 1) break;
+    }
+    if (excerpt.trim() && occurrences === 1) return `For Continuation Context, focus on the turn that begins with this user request:
+
+<split-turn-request>
+${excerpt}
+</split-turn-request>`;
+    if (length === characters.length) return undefined;
+    length = Math.min(length * 2, characters.length);
+  }
 }
 
 export default function cachewiseCompact(pi: ExtensionAPI) {
@@ -371,12 +411,12 @@ export default function cachewiseCompact(pi: ExtensionAPI) {
       }
       summaryPrompt = `${splitBoundary}
 
-Create one coherent checkpoint of all conversation messages above, including the split-turn prefix and any previous summary.
+Create one coherent checkpoint of all conversation messages above, including any previous summary.
 
-${summaryPrompt}
+${summaryPrompt.replace("Use this EXACT format:", "Use the checkpoint format below, followed by the Continuation Context section described afterward:")}
 
 ## Continuation Context
-Identify the user's request at the split-turn boundary, progress as of the end of the messages above, and unresolved details needed to understand the retained continuation. Include earlier dependencies when needed. Avoid repeating information already covered in the checkpoint. Do not infer or reconstruct later messages stored separately.`;
+Identify the user's request quoted above, the progress made on that request, and any unresolved questions, blockers, or unfinished work as of the end of the conversation messages above. Include earlier dependencies when needed. Avoid repeating information already covered in the checkpoint. Only describe information present in those conversation messages; do not speculate about what happened afterward.`;
     }
     const responseFormat = `\n\nWrap the entire generated summary in exactly one ${summaryOpen} block, closed by ${summaryClose}.
 Place all sections inside that single block. Output only that block, without preamble or trailing text. Do not nest or repeat these delimiters inside the summary.`;

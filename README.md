@@ -48,7 +48,7 @@ In RPC mode, submit extension commands through `prompt`. Pi's RPC `compact` oper
 
 ## Compatibility
 
-Automated tests cover OpenAI-compatible Chat Completions and Anthropic Messages. Live testing has covered only Chat Completions, where it verified prefix preservation and provider-reported cache reuse. Anthropic Messages has not yet been verified against a live provider.
+Automated and live tests cover OpenAI-compatible Chat Completions and Anthropic Messages. Representative live checks have verified prefix preservation, provider-reported cache reuse, optimized compaction, and continuation through both APIs. This establishes compatibility for the tested configurations, not every provider or model.
 
 This extension preserves the request prefix; it cannot guarantee cache retention, a cache hit, or faster execution on every attempt. For the intended benefit of achieving cache reuse, your inference engine must be able to prefill from an earlier prefix than the latest state of the conversation. This is true of oMLX at least as of 0.7.0, but may not be true of all inference engines.
 
