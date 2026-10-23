@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -53,4 +53,27 @@ test("unversioned candidates get a source digest covering sibling imports", asyn
   const after = await candidateIdentity(entry);
   assert.equal(before.revision, null);
   assert.notEqual(after.sourceHash, before.sourceHash);
+});
+
+test("ignored installed candidate does not claim its consumer's Git identity", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "candidate-consumer-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  await git("init", "-q");
+  await writeFile(join(root, ".gitignore"), "node_modules/\n");
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: "9.0.0" }));
+  await git("add", ".");
+  await git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "consumer");
+  const installed = join(root, "node_modules", "candidate");
+  await mkdir(installed, { recursive: true });
+  await writeFile(join(installed, "package.json"), JSON.stringify({ version: "3.2.1" }));
+  const entry = join(installed, "index.ts");
+  await writeFile(entry, "export default () => 1;\n");
+  const identity = await candidateIdentity(entry);
+  assert.equal(identity.revision, null);
+  assert.equal(identity.dirty, null);
+  assert.equal(identity.version, "3.2.1");
+  assert.equal(identity.sourceRoot, await realpath(installed));
+  assert.match(identity.sourceHash, /^[0-9a-f]{64}$/);
+  assert.match(identity.entryHash, /^[0-9a-f]{64}$/);
 });

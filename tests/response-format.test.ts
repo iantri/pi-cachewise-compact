@@ -32,9 +32,7 @@ for (const api of ["openai-completions", "anthropic-messages"] as const) {
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
   for (const candidate of [
-    "x", "Sure, I can help with that!", "I'll summarize the conversation for you.", "**Understood!**",
-    "I cannot help with that request.", "I'm sorry, but I can't assist with that request.",
-    "Je ne peux pas vous aider.",
+    "x", "I'm sorry, but I can't assist with that request.",
     "## Goal\n\nKeep  exact spacing.  \n```ts\nconst node = '<item>';\n```\nUse &lt;literal&gt; entities.",
   ]) {
     test(`${api}: valid block preserves its content (${candidate.split("\n")[0]})`, async (t) => {

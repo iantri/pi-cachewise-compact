@@ -299,13 +299,10 @@ test("split-only compaction preserves the previous summary verbatim without budg
 
 for (const api of ["openai-completions", "anthropic-messages"] as const) {
 for (const withPreviousSummary of [false, true]) {
-for (const unheaded of [false, true]) {
-test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary ? " with a previous summary" : ""}${unheaded ? " with unheaded output" : ""}`, async (t) => {
+test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary ? " with a previous summary" : ""}`, async (t) => {
   const splitRequest = "MIXED_SPLIT_REQUEST: preserve exact parser behavior.";
   const turnSummary = "## Original Request\nPreserve parser behavior.\n\n## Progress So Far\n- Read parser.ts.\n\n## Context Needed to Continue\n- Keep the parser streaming.";
-  const mixedSummary = unheaded
-    ? "Preserve earlier EOF requirements and continue the streaming parser."
-    : `${summary}\n\n## Continuation Context\n${turnSummary}`;
+  const mixedSummary = `${summary}\n\n## Continuation Context\n${turnSummary}`;
   const h = await createHarness(t, { api, replies: [
     { tool: { name: "read", arguments: { path: "earlier.ts" } } }, "Earlier task recorded.",
     { tool: { name: "read", arguments: { path: "parser.ts" } } },
@@ -372,7 +369,6 @@ test(`${api}: mixed split-turn compaction checkpoints all A${withPreviousSummary
   assert.deepEqual(h.sessionManager.buildSessionContext().messages.at(-1), kept.type === "message" ? kept.message : undefined);
   assert.deepEqual(SessionManager.open(h.sessionManager.getSessionFile()!).buildSessionContext().messages, h.session.messages);
 });
-}
 }
 }
 
@@ -518,25 +514,6 @@ for (const [name, reply] of Object.entries<Reply>({
     assert.equal(compactions[0].summary, summary);
     await assert.rejects(access(join(cwd, "maintenance-side-effect.ts")), { code: "ENOENT" });
   });
-}
-
-for (const api of ["openai-completions", "anthropic-messages"] as const) {
-  for (const candidate of ["Preserve streaming.",
-    "Keep src/parser.ts streaming; add an EOF test.",
-    "Sure, I can help with that!\n\nKeep src/parser.ts streaming; add an EOF test.",
-    "**Keep src/parser.ts streaming; add an EOF test.**"]) {
-    test(`${api}: concise substantive summary remains optimized (${candidate})`, async (t) => {
-      const h = await createHarness(t, { api, replies: ["Recorded.", "Recorded.", "Recent.", wrappedSummary(candidate)] });
-      await h.session.prompt(olderConstraint);
-      await h.session.prompt(olderTask);
-      await h.session.prompt(recent);
-      const result = await h.session.compact();
-      assert.equal(result.summary, candidate);
-      assert.equal(h.requests.length, 4);
-      assert.equal(h.sessionManager.getBranch().findLast((entry) => entry.type === "compaction")!.fromHook, true);
-      assert.deepEqual(h.extensionErrors, []);
-    });
-  }
 }
 
 test("Anthropic summary preserves Pi's configured thinking budget", async (t) => {

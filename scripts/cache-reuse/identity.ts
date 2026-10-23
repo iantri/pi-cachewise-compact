@@ -26,14 +26,25 @@ export async function candidateIdentity(entry: string) {
   let dirty: boolean | null = null;
   try {
     const git = promisify(execFile);
-    revision = (
-      await git("git", ["rev-parse", "HEAD"], { cwd: dirname(entry) })
+    const repositoryRoot = (
+      await git("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(entry) })
     ).stdout.trim();
-    dirty = Boolean(
-      (
-        await git("git", ["status", "--porcelain"], { cwd: dirname(entry) })
-      ).stdout.trim(),
-    );
+    const candidatePath = relative(repositoryRoot, entry);
+    // An ignored install can sit inside the consumer's checkout.
+    const candidateFiles = (
+      await git("git", [
+        "--literal-pathspecs", "ls-files", "--cached", "--others",
+        "--exclude-standard", "--", candidatePath,
+      ], { cwd: repositoryRoot })
+    ).stdout;
+    if (candidateFiles) {
+      revision = (
+        await git("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot })
+      ).stdout.trim();
+      dirty = Boolean(
+        (await git("git", ["status", "--porcelain"], { cwd: repositoryRoot })).stdout.trim(),
+      );
+    }
   } catch {
     /* Installed packages may have no Git metadata. */
   }
